@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+
+# PyInstaller
+*.spec
+build_system/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Excel generated files
+BD-Nutricion.xlsx
+reporte_alimentacion.txt
