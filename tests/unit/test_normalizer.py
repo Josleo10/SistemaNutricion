@@ -29,12 +29,17 @@ class TestNormalizarNombre:
 
 
 class TestObtenerNombreReferencia:
-    def test_mapeo_directo(self):
+    def test_sin_resolver_title_default(self):
+        # Sin resolver, devuelve el input title-cased
         assert obtener_nombre_referencia("huevo") == "Huevo"
-        assert obtener_nombre_referencia("atun") == "Atún"
+        assert obtener_nombre_referencia("atun") == "Atun"
 
-    def test_mapeo_con_acento(self):
-        assert obtener_nombre_referencia("plátano") == "Plátano"
+    def test_con_resolver(self):
+        def resolver_mock(nombre):
+            mapeo = {"huevo": "Huevo", "atun": "Atún"}
+            return mapeo.get(nombre.lower())
+        assert obtener_nombre_referencia("huevo", resolver=resolver_mock) == "Huevo"
+        assert obtener_nombre_referencia("atun", resolver=resolver_mock) == "Atún"
 
     def test_sin_mapeo_title(self):
         assert obtener_nombre_referencia("alimento_raro") == "Alimento_Raro"

@@ -1,28 +1,42 @@
 from datetime import date, timedelta
 from collections import Counter
 from config import METAS_DIARIAS, DIAS_SEMANA, NIVELES_ACTIVIDAD
-from domain.normalizer import obtener_nombre_referencia
+from domain.normalizer import obtener_nombre_referencia, normalizar_nombre
 from domain.calculator import calcular_macros_comida, calcular_calorias_comida
 from domain.entities import RegistroDiario
 from domain.report import MacrosDia, EvaluacionNutricional, ReporteSemanal
-from infrastructure.excel_repo import leer_comidas_excel, leer_dia_excel, leer_alimentos_referencia, guardar_comidas_excel
-from infrastructure.comidas_repo import guardar_comidas as pg_guardar_comidas
+from infrastructure.comidas_repo import (
+    guardar_comidas as pg_guardar_comidas,
+    obtener_comidas_semana,
+    obtener_comidas_dia,
+    eliminar_comidas_dia,
+    eliminar_comidas_por_tipo,
+)
+from infrastructure.alimentos_repo import (
+    obtener_todos as obtener_referencia_pg,
+    buscar_por_nombre_o_alias,
+)
 from infrastructure.user_repo import crear_tabla_usuario, actualizar_usuario, obtener_datos_usuario
+
+
+def _resolver_alias(nombre: str) -> str | None:
+    res = buscar_por_nombre_o_alias(nombre)
+    return res["nombre"] if res else None
 
 
 def registrar_comida(fecha: date, desayuno: str | None, almuerzo: str | None,
                      cena: str | None, extras: str | None, referencia: dict) -> dict:
-    """Guarda las comidas en Excel y PostgreSQL. Retorna status."""
-    guardar_comidas_excel(fecha, desayuno, almuerzo, cena, extras)
-
+    """Guarda las comidas en PostgreSQL. Solo elimina los tipos de comida que se están actualizando."""
     registros_pg = []
+    comidas_a_actualizar = []
     for tipo_comida, alimentos_str in [("desayuno", desayuno), ("almuerzo", almuerzo),
                                         ("cena", cena), ("extras", extras)]:
         if alimentos_str is None:
             continue
+        comidas_a_actualizar.append(tipo_comida)
         alimentos = [a.strip() for a in alimentos_str.split("/") if a.strip()]
         for alim in alimentos:
-            nombre_ref = obtener_nombre_referencia(alim)
+            nombre_ref = obtener_nombre_referencia(alim, resolver=_resolver_alias)
             macros = referencia.get(nombre_ref, {}) if nombre_ref else {}
             registros_pg.append((
                 fecha, tipo_comida, nombre_ref if nombre_ref else alim,
@@ -30,15 +44,18 @@ def registrar_comida(fecha: date, desayuno: str | None, almuerzo: str | None,
                 macros.get("carbos"), macros.get("kcal"),
             ))
 
+    if comidas_a_actualizar:
+        eliminar_comidas_por_tipo(fecha, comidas_a_actualizar)
+
     num_pg = pg_guardar_comidas(registros_pg) if registros_pg else 0
-    return {"excel": True, "postgresql": num_pg}
+    return {"postgresql": num_pg}
 
 
 def obtener_reporte_semanal(fecha_inicio: date) -> ReporteSemanal:
-    """Genera un reporte semanal completo desde Excel."""
+    """Genera un reporte semanal completo desde PostgreSQL."""
     fecha_fin = fecha_inicio + timedelta(days=6)
-    datos_raw = leer_comidas_excel(fecha_inicio, fecha_fin)
-    referencia = leer_alimentos_referencia()
+    datos_raw = obtener_comidas_semana(fecha_inicio, fecha_fin)
+    referencia = obtener_referencia_pg()
 
     if not datos_raw:
         return ReporteSemanal(
@@ -60,7 +77,7 @@ def obtener_reporte_semanal(fecha_inicio: date) -> ReporteSemanal:
     for dia in registros:
         macros_dia = {"kcal": 0, "proteina": 0, "grasa": 0, "carbos": 0}
         for _, alimentos in dia.comidas_con_nombres():
-            m = calcular_macros_comida(alimentos, referencia)
+            m = calcular_macros_comida(alimentos, referencia, resolver=_resolver_alias)
             for k in macros_dia:
                 macros_dia[k] += m.get(k, 0) or 0
         for k in totales:
@@ -180,14 +197,14 @@ def cargar_usuario() -> dict:
 
 
 def obtener_vista_previa_dia(fecha: date) -> dict:
-    datos = leer_dia_excel(fecha)
-    referencia = leer_alimentos_referencia()
+    datos = obtener_comidas_dia(fecha)
+    referencia = obtener_referencia_pg()
     total_kcal = 0
     filas = []
     for comida, alimentos in [("Desayuno", datos["desayuno"]), ("Almuerzo", datos["almuerzo"]),
                                ("Cena", datos["cena"]), ("Extras", datos["extras"])]:
         if alimentos:
-            kcal = calcular_calorias_comida(alimentos, referencia)
+            kcal = calcular_calorias_comida(alimentos, referencia, resolver=_resolver_alias)
             total_kcal += kcal
             filas.append({"comida": comida, "alimentos": ", ".join(alimentos), "kcal": int(kcal)})
     return {"filas": filas, "total_kcal": int(total_kcal)}

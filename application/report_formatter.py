@@ -1,8 +1,9 @@
 from config import METAS_DIARIAS, DIAS_SEMANA
 from domain.report import ReporteSemanal
+from domain.calculator import calcular_macros_comida
 
 
-def formatear_reporte(reporte: ReporteSemanal) -> str:
+def formatear_reporte(reporte: ReporteSemanal, referencia: dict | None = None) -> str:
     if reporte.estado_general == "SIN DATOS":
         return "No se encontraron datos para el período seleccionado."
 
@@ -22,11 +23,11 @@ def formatear_reporte(reporte: ReporteSemanal) -> str:
 
         for comida, alimentos in dia.comidas_con_nombres():
             if alimentos:
-                from domain.calculator import calcular_macros_comida
-                from infrastructure.excel_repo import leer_alimentos_referencia
-                ref = leer_alimentos_referencia()
-                macros = calcular_macros_comida(alimentos, ref)
-                kcal_str = f"{int(macros['kcal'])} kcal" if macros['kcal'] > 0 else ""
+                if referencia:
+                    macros = calcular_macros_comida(alimentos, referencia)
+                    kcal_str = f"{int(macros['kcal'])} kcal" if macros['kcal'] > 0 else ""
+                else:
+                    kcal_str = ""
                 lineas.append(f"  {comida:10}: {', '.join(alimentos)}  {kcal_str}")
             else:
                 lineas.append(f"  {comida:10}: (ninguno)")

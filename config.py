@@ -34,18 +34,3 @@ NIVELES_ACTIVIDAD = {
 }
 
 DIAS_SEMANA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-
-_EXCEL_OVERRIDDEN = os.getenv("EXCEL_PATH")
-_EXCEL_DEFAULT = r"C:\MIS DOCUMENTOS\IMPORTANTE\PROYECTOS\BD-Nutrición.xlsx"
-
-def get_ruta_excel() -> str:
-    if _EXCEL_OVERRIDDEN:
-        return _EXCEL_OVERRIDDEN
-    if _frozen:
-        ruta = os.path.join(os.path.dirname(sys.executable), "BD-Nutricion.xlsx")
-        if os.path.exists(ruta):
-            return ruta
-        if os.path.exists(_EXCEL_DEFAULT):
-            return _EXCEL_DEFAULT
-        return ruta
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "BD-Nutricion.xlsx")

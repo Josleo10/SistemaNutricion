@@ -16,7 +16,13 @@ from application.services import (
     calcular_tmb_get, guardar_usuario, cargar_usuario, obtener_vista_previa_dia,
 )
 from application.report_formatter import formatear_reporte, formatear_analisis
-from infrastructure.excel_repo import leer_alimentos_referencia
+from infrastructure.alimentos_repo import (
+    obtener_todos as obtener_referencia_pg,
+    obtener_todos_con_detalle,
+    insertar_alimento,
+    buscar_todos,
+    agregar_alias,
+)
 
 
 def obtener_lunes(fecha):
@@ -32,7 +38,7 @@ class NutricionApp(tk.Tk):
         self.resizable(False, False)
 
         self.reporte_actual = ""
-        self.referencia = leer_alimentos_referencia()
+        self.referencia = obtener_referencia_pg()
         self.ultima_fecha_reporte = None
 
         self._crear_interfaz()
@@ -44,14 +50,20 @@ class NutricionApp(tk.Tk):
         tab_ingresar = ttk.Frame(notebook, padding=15)
         tab_reporte = ttk.Frame(notebook, padding=15)
         tab_analisis = ttk.Frame(notebook, padding=15)
+        tab_alimentos = ttk.Frame(notebook, padding=15)
+        tab_backup = ttk.Frame(notebook, padding=15)
 
         notebook.add(tab_ingresar, text="  Ingresar Comidas  ")
         notebook.add(tab_reporte, text="  Generar Reporte  ")
         notebook.add(tab_analisis, text="  Análisis Nutricional  ")
+        notebook.add(tab_alimentos, text="  Alimentos  ")
+        notebook.add(tab_backup, text="  Backups  ")
 
         self._tab_ingresar(tab_ingresar)
         self._tab_reporte(tab_reporte)
         self._tab_analisis(tab_analisis)
+        self._tab_alimentos(tab_alimentos)
+        self._tab_backup(tab_backup)
 
     # ── TAB: Ingresar Comidas ──────────────────────────────
 
@@ -197,10 +209,7 @@ class NutricionApp(tk.Tk):
             messagebox.showwarning("Sin reporte", "Primero genere un reporte.")
             return
         try:
-            from config import get_ruta_excel
-            carpeta = os.path.dirname(get_ruta_excel())
-            if not os.path.exists(carpeta):
-                carpeta = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+            carpeta = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.getcwd()
             ruta = os.path.join(carpeta, "reporte_alimentacion.txt")
             with open(ruta, "w", encoding="utf-8") as f:
                 f.write(self.reporte_actual)
@@ -337,6 +346,261 @@ class NutricionApp(tk.Tk):
             self.text_analisis.config(state="disabled")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo analizar:\n{e}")
+
+    # ── TAB: Alimentos ─────────────────────────────────────
+
+    def _tab_alimentos(self, parent):
+        nb = ttk.Notebook(parent)
+        nb.pack(fill="both", expand=True)
+
+        tab_agregar = ttk.Frame(nb, padding=10)
+        tab_buscar = ttk.Frame(nb, padding=10)
+        nb.add(tab_agregar, text="  Agregar Alimento  ")
+        nb.add(tab_buscar, text="  Buscar Alimento  ")
+
+        self._tab_agregar_alimento(tab_agregar)
+        self._tab_buscar_alimento(tab_buscar)
+
+    # ── TAB: Backups ───────────────────────────────────────
+
+    def _tab_backup(self, parent):
+        # Frame para controles
+        frame_controls = ttk.LabelFrame(parent, text="Control de Backups", padding=15)
+        frame_controls.pack(fill="x", pady=(0, 10))
+
+        ttk.Button(frame_controls, text="Crear Backup Ahora", 
+                  command=self._crear_backup).pack(side="left", padx=(0, 10))
+        ttk.Button(frame_controls, text="Ver Historial", 
+                  command=self._actualizar_historial_backups).pack(side="left")
+
+        # Frame para el historial
+        frame_historial = ttk.LabelFrame(parent, text="Historial de Backups", padding=15)
+        frame_historial.pack(fill="both", expand=True)
+
+        cols = ("Fecha", "Tamaño", "Estado")
+        self.tree_backup = ttk.Treeview(frame_historial, columns=cols, show="headings", height=10)
+        for col in cols:
+            self.tree_backup.heading(col, text=col)
+        self.tree_backup.column("Fecha", width=150)
+        self.tree_backup.column("Tamaño", width=100)
+        self.tree_backup.column("Estado", width=200)
+        self.tree_backup.pack(fill="both", expand=True)
+
+        # Barra de estado
+        self.label_backup_estado = ttk.Label(parent, text="", foreground="blue")
+        self.label_backup_estado.pack(fill="x", pady=(5, 0))
+
+        # Cargar historial inicial
+        self._actualizar_historial_backups()
+
+    def _crear_backup(self):
+        """Crear un backup de la base de datos"""
+        self.label_backup_estado.config(text="Creando backup...", foreground="blue")
+        self.update_idletasks()  # Forzar actualización de la UI
+
+        try:
+            # Importar y ejecutar la función de backup
+            from backup import crear_backup, limpiar_viejos
+            
+            ruta = crear_backup()
+            tamano = os.path.getsize(ruta)
+            limpiar_viejos()
+            
+            self.label_backup_estado.config(
+                text=f"Backup creado: {os.path.basename(ruta)} ({tamano / 1024:.1f} KB)", 
+                foreground="green"
+            )
+            self._actualizar_historial_backups()
+            
+        except FileNotFoundError:
+            self.label_backup_estado.config(
+                text="ERROR: pg_dump no encontrado. Instale PostgreSQL y agregue su bin al PATH.", 
+                foreground="red"
+            )
+            messagebox.showerror(
+                "pg_dump no encontrado", 
+                "No se pudo encontrar pg_dump. Asegúrese de que PostgreSQL esté instalado y su directorio bin esté en el PATH del sistema."
+            )
+        except Exception as e:
+            self.label_backup_estado.config(
+                text=f"Error: {str(e)}", 
+                foreground="red"
+            )
+            messagebox.showerror("Error en Backup", f"No se pudo crear el backup:\n{e}")
+
+    def _actualizar_historial_backups(self):
+        """Actualizar la lista de backups disponibles"""
+        # Limpiar árbol
+        for item in self.tree_backup.get_children():
+            self.tree_backup.delete(item)
+
+        try:
+            backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backups")
+            backup_dir = os.path.normpath(backup_dir)
+            
+            if not os.path.exists(backup_dir):
+                self.tree_backup.insert("", "end", values=("No hay backups", "", ""))
+                return
+
+            archivos = sorted(
+                [f for f in os.listdir(backup_dir) if f.startswith("backup_") and f.endswith(".sql")],
+                reverse=True,
+            )
+            
+            if not archivos:
+                self.tree_backup.insert("", "end", values=("No hay backups", "", ""))
+                return
+
+            for archivo in archivos:
+                ruta = os.path.join(backup_dir, archivo)
+                tamano = os.path.getsize(ruta)
+                fecha_str = archivo.replace("backup_", "").replace(".sql", "")
+                # Formatear fecha: YYYY-MM-DD_HHMMSS -> DD/MM/YYYY HH:MM:SS
+                try:
+                    from datetime import datetime
+                    fecha_obj = datetime.strptime(fecha_str, "%Y-%m-%d_%H%M%S")
+                    fecha_formateada = fecha_obj.strftime("%d/%m/%Y %H:%M:%S")
+                except:
+                    fecha_formateada = fecha_str
+                
+                self.tree_backup.insert("", "end", values=(
+                    fecha_formateada,
+                    f"{tamano / 1024:.1f} KB",
+                    "Disponible"
+                ))
+                
+        except Exception as e:
+            self.tree_backup.insert("", "end", values=("Error al cargar historial", str(e), ""))
+
+    def _tab_agregar_alimento(self, parent):
+        frame = ttk.LabelFrame(parent, text="Nuevo Alimento", padding=15)
+        frame.pack(fill="x", pady=5)
+
+        ttk.Label(frame, text="Nombre:").grid(row=0, column=0, sticky="w", pady=3)
+        self.entry_alim_nombre = ttk.Entry(frame, width=30)
+        self.entry_alim_nombre.grid(row=0, column=1, sticky="w", pady=3)
+
+        ttk.Label(frame, text="Tipo:").grid(row=1, column=0, sticky="w", pady=3)
+        tipos = ["Fruta", "Verdura", "Proteína", "Carbohidrato", "Grasa", "Lácteo", "Bebida", "Otro"]
+        self.combo_alim_tipo = ttk.Combobox(frame, values=tipos, state="readonly", width=20)
+        self.combo_alim_tipo.grid(row=1, column=1, sticky="w", pady=3)
+        self.combo_alim_tipo.current(0)
+
+        campos_macros = [("Proteína (g):", "entry_alim_prot"), ("Grasa (g):", "entry_alim_grasa"),
+                         ("Carbohidratos (g):", "entry_alim_carb"), ("Calorías (kcal):", "entry_alim_kcal")]
+        for i, (label, attr) in enumerate(campos_macros, 2):
+            ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w", pady=3)
+            entry = ttk.Entry(frame, width=15)
+            entry.grid(row=i, column=1, sticky="w", pady=3)
+            setattr(self, attr, entry)
+
+        ttk.Label(frame, text="Alias (opcional, separados por /):").grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 3))
+        self.entry_alim_alias = ttk.Entry(frame, width=40)
+        self.entry_alim_alias.grid(row=7, column=0, columnspan=2, sticky="w", pady=3)
+
+        ttk.Button(frame, text="Guardar Alimento", command=self._guardar_alimento).grid(row=8, column=0, columnspan=2, pady=10)
+        self.label_alim_estado = ttk.Label(frame, text="", foreground="green")
+        self.label_alim_estado.grid(row=9, column=0, columnspan=2)
+
+    def _guardar_alimento(self):
+        nombre = self.entry_alim_nombre.get().strip()
+        if not nombre:
+            messagebox.showwarning("Campo requerido", "Ingrese el nombre del alimento.")
+            return
+        tipo = self.combo_alim_tipo.get()
+        try:
+            prot = float(self.entry_alim_prot.get().strip()) if self.entry_alim_prot.get().strip() else None
+            grasa = float(self.entry_alim_grasa.get().strip()) if self.entry_alim_grasa.get().strip() else None
+            carb = float(self.entry_alim_carb.get().strip()) if self.entry_alim_carb.get().strip() else None
+            kcal = float(self.entry_alim_kcal.get().strip()) if self.entry_alim_kcal.get().strip() else None
+        except ValueError:
+            messagebox.showerror("Error", "Los valores de macros deben ser números.")
+            return
+
+        alias_str = self.entry_alim_alias.get().strip()
+        alias = [a.strip() for a in alias_str.split("/")] if alias_str else None
+
+        try:
+            insertar_alimento(nombre, tipo, prot, grasa, carb, kcal, alias)
+            self.label_alim_estado.config(text=f"Alimento '{nombre}' guardado exitosamente", foreground="green")
+            self.entry_alim_nombre.delete(0, "end")
+            self.entry_alim_prot.delete(0, "end")
+            self.entry_alim_grasa.delete(0, "end")
+            self.entry_alim_carb.delete(0, "end")
+            self.entry_alim_kcal.delete(0, "end")
+            self.entry_alim_alias.delete(0, "end")
+            self.referencia = obtener_referencia_pg()
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo guardar:\n{e}")
+
+    def _tab_buscar_alimento(self, parent):
+        frame_busq = ttk.Frame(parent)
+        frame_busq.pack(fill="x", pady=5)
+        ttk.Label(frame_busq, text="Buscar:").pack(side="left")
+        self.entry_buscar = ttk.Entry(frame_busq, width=30)
+        self.entry_buscar.pack(side="left", padx=5)
+        self.entry_buscar.bind("<Return>", lambda e: self._buscar_alimento())
+        ttk.Button(frame_busq, text="Buscar", command=self._buscar_alimento).pack(side="left")
+
+        cols = ("Nombre", "Tipo", "Proteína", "Grasa", "Carbos", "kcal")
+        self.tree_buscar = ttk.Treeview(parent, columns=cols, show="headings", height=15)
+        for col in cols:
+            self.tree_buscar.heading(col, text=col)
+        self.tree_buscar.column("Nombre", width=150)
+        self.tree_buscar.column("Tipo", width=80)
+        self.tree_buscar.column("Proteína", width=70)
+        self.tree_buscar.column("Grasa", width=70)
+        self.tree_buscar.column("Carbos", width=70)
+        self.tree_buscar.column("kcal", width=60)
+        self.tree_buscar.pack(fill="both", expand=True, pady=5)
+
+        self.tree_buscar.bind("<Double-1>", self._mostrar_detalle_alimento)
+        self._cargar_todos_alimentos()
+
+    def _cargar_todos_alimentos(self):
+        for item in self.tree_buscar.get_children():
+            self.tree_buscar.delete(item)
+        alimentos = obtener_todos_con_detalle()
+        for alim in alimentos:
+            self.tree_buscar.insert("", "end", values=(
+                alim["nombre"], alim["tipo"] or "",
+                alim["proteina"] or "", alim["grasa"] or "",
+                alim["carbos"] or "", alim["kcal"] or "",
+            ))
+
+    def _buscar_alimento(self):
+        termino = self.entry_buscar.get().strip()
+        if not termino:
+            self._cargar_todos_alimentos()
+            return
+        for item in self.tree_buscar.get_children():
+            self.tree_buscar.delete(item)
+        resultados = buscar_todos(termino)
+        for alim in resultados:
+            self.tree_buscar.insert("", "end", values=(
+                alim["nombre"], alim["tipo"] or "",
+                alim["proteina"] or "", alim["grasa"] or "",
+                alim["carbos"] or "", alim["kcal"] or "",
+            ))
+        if not resultados:
+            messagebox.showinfo("Sin resultados", f"No se encontraron alimentos con '{termino}'")
+
+    def _mostrar_detalle_alimento(self, event):
+        sel = self.tree_buscar.selection()
+        if not sel:
+            return
+        vals = self.tree_buscar.item(sel[0], "values")
+        nombre = vals[0]
+        detalle = buscar_todos(nombre)
+        if not detalle:
+            return
+        alim = detalle[0]
+        texto = f"Nombre: {alim['nombre']}\nTipo: {alim['tipo'] or 'N/A'}\n\n"
+        texto += f"Proteína: {alim['proteina'] or 0} g\n"
+        texto += f"Grasa: {alim['grasa'] or 0} g\n"
+        texto += f"Carbohidratos: {alim['carbos'] or 0} g\n"
+        texto += f"Calorías: {alim['kcal'] or 0} kcal"
+        messagebox.showinfo(f"Detalle: {nombre}", texto)
 
 
 if __name__ == "__main__":

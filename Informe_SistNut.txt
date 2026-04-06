@@ -1,0 +1,123 @@
+Sistema de Nutrición - Informe Completo y Detallado
+
+¿Qué es este sistema?
+El Sistema de Nutrición es una aplicación de escritorio que ayuda a las personas a llevar un registro de lo que comen cada día, analizar su alimentación semanal y recibir recomendaciones para mejorar su dieta. Funciona como un diario nutricional inteligente que te dice si estás comiendo adecuadamente según tus metas personales.
+
+¿Cómo está organizado el proyecto?
+
+El sistema sigue una estructura llamada "Clean Architecture" que separa claramente las responsabilidades:
+
+### 1. Capa de Presentación (Lo que ves y usas)
+- **Archivo:** presentation/gui.py
+- **Qué hace:** Es la interfaz gráfica con ventanas y botones que tú interactúas
+- **Funcionalidades:**
+  - Registrar tus comidas del día (desayuno, almuerzo, cena, extras)
+  - Ver reportes semanales de tu alimentación
+  - Analizar tu semana y recibir recomendaciones
+  - Calcular tu TMB (tasa metabólica basal) y GET (gasto energético total)
+  - Gestionar alimentos (agregar nuevos, buscar existentes)
+
+### 2. Capa de Aplicación (El "cerebro" que coordina todo)
+- **Archivos:** 
+  - application/services.py - Lógica principal del sistema
+  - application/report_formatter.py - Da formato a los reportes que ves
+- **Qué hace:** 
+  - Recibe lo que tú ingresas en la interfaz
+  - Decide qué hacer con esa información (guardarla, analizarla, etc.)
+  - Coordina entre la capa de presentación y la de dominio/infraestructura
+  - Genera los reportes y análisis que ves en pantalla
+
+### 3. Capa de Dominio (Las reglas del negocio)
+- **Archivos en:** domain/
+- **Qué hace:** Contiene la lógica pura del sistema, sin dependencias externas
+- **Componentes clave:**
+  - **Modelos:** Definiciones de alimentos, comidas, usuarios
+  - **Calculadoras:** Para determinar macros (proteínas, grasas, carbohidratos, calorías)
+  - **Normalizador:** Convierte nombres de alimentos a su forma estándar (ej: "platano" → "Plátano")
+  - **Entidades:** Representa tu registro diario de comidas
+  - **Reportes:** Define cómo se estructuran los análisis semanales
+
+### 4. Capa de Infraestructura (Dónde se guarda la información)
+- **Archivos en:** infrastructure/
+- **Qué hace:** Se encarga de guardar y recuperar información de las bases de datos
+- **Componentes:**
+  - **Alimentos:** Guarda la información nutricional de los alimentos (proteínas, grasas, etc.)
+  - **Comidas:** Registra lo que tú comes cada día
+  - **Usuario:** Almacena tus datos personales (peso, altura, edad, etc.)
+
+¿Cómo fluye la información?
+
+1. **Tú ingresas tus comidas** en la interfaz gráfica
+2. **La aplicación** recibe esa información y decide qué hacer
+3. **Valida los nombres de alimentos** (ej: si escribes "huevo" lo convierte a "Huevo")
+4. **Busca la información nutricional** de cada alimento en la base de datos
+5. **Calcula tus totales diarios** de proteínas, grasas, carbohidratos y calorías
+6. **Guarda todo** en las bases de datos PostgreSQL
+7. **Cuando pides un reporte**, recupera los datos, hace los cálculos y te los muestra
+
+Características principales
+
+### Registro de comidas
+- Puedes ingresar qué desayunaste, almorzaste, cenaste y qué extras tomaste
+- Usa el formato: "Alimento1/Alimento2/Alimento3" (ej: "Huevo/Pan/Cafe")
+- El sistema reconoce alias comunes (ej: "platano" reconoce que es "Plátano")
+
+### Reportes semanales
+- **Resumen por día:** Qué comiste cada día y cuántas calorías tuviste
+- **Estadísticas:** Días con 3 comidas, variedad de alimentos, etc.
+- **Top 5 alimentos:** Lo que más consumes
+- **Resumen nutricional:** Comparación de tu consumo promedio con tus metas
+- **Frecuencia de alimentos:** Qué comes más seguido (con gráfico de barras)
+
+### Análisis nutricional
+- Te dice si estás consumiendo demasiado o muy poco de cada nutriente
+- Da recomendaciones específicas (ej: "Aumentar consumo de carbohidratos")
+- Evalúa tu estado general (OK o necesita ajustes)
+
+### Calculadora TMB/GET
+- Calcula cuántas calorías quemas en reposo (TMB)
+- Calcula cuántas necesitas al día según tu nivel de actividad (GET)
+- Tiene 5 niveles: sedentario, ligero, moderado, muy activo y extra activo
+
+### Gestión de alimentos (NUEVA)
+- Puedes agregar nuevos alimentos con su información nutricional
+- Busca alimentos existentes por nombre o alias
+- Ve el detalle completo de cada alimento (macros por 100g)
+
+### Backup de datos
+- El sistema crea copias de seguridad automáticas de tu información
+- Mantiene las últimas 4 copias de seguridad
+
+Tecnologías utilizadas
+
+- **Lenguaje:** Python 3.11
+- **Interfaz gráfica:** Tkinter (viene con Python estándar)
+- **Base de datos:** PostgreSQL (para guardar todo de forma segura)
+- **Pruebas:** Pytest (57 pruebas que verifican que todo funcione correctamente)
+- **Empaquetado:** PyInstaller (para crear el archivo .exe que puedes ejecutar)
+
+Ventajas de este sistema
+
+1. **Persistente:** Tu información se guarda de forma segura en una base de datos
+2. **Inteligente:** Reconoce variantes de nombres de alimentos
+3. **Completo:** Te da tanto el registro como el análisis y las recomendaciones
+4. **Personalizable:** Puedes agregar tus propios alimentos con sus valores nutricionales
+5. **Seguro:** Tus datos permanecen en tu computadora (a menos que decidas compartirlos)
+6. **Fácil de usar:** Interfaz simple y clara para cualquiera
+
+Cómo usarlo
+
+1. Ejecuta Sistema_Nutricion.exe
+2. Ve ingresando tus comidas diarias en la pestaña "Ingresar Comidas"
+3. Usa "Generar Reporte" para ver tu análisis semanal
+4. Usa "Análisis Nutricional" para ver tu TMB/GET y análisis detallado
+5. Usa "Alimentos" para gestionar tu base de datos de alimentos
+
+Próximos pasos sugeridos
+
+1. El sistema está listo para usar tal cual
+2. Puedes comenzar a registrar tus comidas hoy mismo
+3. La información se acumulará día a día para darte análisis cada vez más precisos
+4. Puedes agregar alimentos personalizados según lo que normalmente consumes
+
+Este sistema te ayuda a tomar conciencia de tus hábitos alimenticios y te brinda la información necesaria para tomar mejores decisiones sobre tu dieta, todo desde una aplicación sencilla de usar en tu computadora.
