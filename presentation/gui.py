@@ -23,6 +23,7 @@ from infrastructure.alimentos_repo import (
     buscar_todos,
     agregar_alias,
 )
+from infrastructure.comidas_repo import obtener_comidas_semana, obtener_datos_semana
 
 
 def obtener_lunes(fecha):
@@ -52,18 +53,21 @@ class NutricionApp(tk.Tk):
         tab_analisis = ttk.Frame(notebook, padding=15)
         tab_alimentos = ttk.Frame(notebook, padding=15)
         tab_backup = ttk.Frame(notebook, padding=15)
+        tab_historial = ttk.Frame(notebook, padding=15)
 
         notebook.add(tab_ingresar, text="  Ingresar Comidas  ")
         notebook.add(tab_reporte, text="  Generar Reporte  ")
         notebook.add(tab_analisis, text="  Análisis Nutricional  ")
         notebook.add(tab_alimentos, text="  Alimentos  ")
         notebook.add(tab_backup, text="  Backups  ")
+        notebook.add(tab_historial, text="  Historial Semanal  ")
 
         self._tab_ingresar(tab_ingresar)
         self._tab_reporte(tab_reporte)
         self._tab_analisis(tab_analisis)
         self._tab_alimentos(tab_alimentos)
         self._tab_backup(tab_backup)
+        self._tab_historial(tab_historial)
 
     # ── TAB: Ingresar Comidas ──────────────────────────────
 
@@ -396,10 +400,9 @@ class NutricionApp(tk.Tk):
     def _crear_backup(self):
         """Crear un backup de la base de datos"""
         self.label_backup_estado.config(text="Creando backup...", foreground="blue")
-        self.update_idletasks()  # Forzar actualización de la UI
+        self.update_idletasks()
 
         try:
-            # Importar y ejecutar la función de backup
             from backup import crear_backup, limpiar_viejos
             
             ruta = crear_backup()
@@ -412,30 +415,35 @@ class NutricionApp(tk.Tk):
             )
             self._actualizar_historial_backups()
             
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             self.label_backup_estado.config(
-                text="ERROR: pg_dump no encontrado. Instale PostgreSQL y agregue su bin al PATH.", 
+                text=f"ERROR: pg_dump no encontrado", 
                 foreground="red"
             )
             messagebox.showerror(
                 "pg_dump no encontrado", 
-                "No se pudo encontrar pg_dump. Asegúrese de que PostgreSQL esté instalado y su directorio bin esté en el PATH del sistema."
+                "No se encontró pg_dump. Asegúrate de tener PostgreSQL instalado."
             )
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             self.label_backup_estado.config(
-                text=f"Error: {str(e)}", 
+                text=f"Error: {type(e).__name__}", 
                 foreground="red"
             )
-            messagebox.showerror("Error en Backup", f"No se pudo crear el backup:\n{e}")
+            messagebox.showerror("Error en Backup", f"{type(e).__name__}: {e}")
 
     def _actualizar_historial_backups(self):
         """Actualizar la lista de backups disponibles"""
-        # Limpiar árbol
         for item in self.tree_backup.get_children():
             self.tree_backup.delete(item)
 
         try:
-            backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "backups")
+            if getattr(sys, 'frozen', False):
+                _ROOT = os.path.dirname(sys.executable)
+            else:
+                _ROOT = os.path.dirname(os.path.abspath(__file__))
+            backup_dir = os.path.join(_ROOT, "Backups")
             backup_dir = os.path.normpath(backup_dir)
             
             if not os.path.exists(backup_dir):
@@ -564,8 +572,8 @@ class NutricionApp(tk.Tk):
         for alim in alimentos:
             self.tree_buscar.insert("", "end", values=(
                 alim["nombre"], alim["tipo"] or "",
-                alim["proteina"] or "", alim["grasa"] or "",
-                alim["carbos"] or "", alim["kcal"] or "",
+                self._formatear_macro(alim["proteina"]), self._formatear_macro(alim["grasa"]),
+                self._formatear_macro(alim["carbos"]), self._formatear_macro(alim["kcal"]),
             ))
 
     def _buscar_alimento(self):
@@ -579,11 +587,17 @@ class NutricionApp(tk.Tk):
         for alim in resultados:
             self.tree_buscar.insert("", "end", values=(
                 alim["nombre"], alim["tipo"] or "",
-                alim["proteina"] or "", alim["grasa"] or "",
-                alim["carbos"] or "", alim["kcal"] or "",
+                self._formatear_macro(alim["proteina"]), self._formatear_macro(alim["grasa"]),
+                self._formatear_macro(alim["carbos"]), self._formatear_macro(alim["kcal"]),
             ))
         if not resultados:
             messagebox.showinfo("Sin resultados", f"No se encontraron alimentos con '{termino}'")
+
+    def _formatear_macro(self, valor):
+        """Formatear valor numérico, mostrando 0 si es None o 0"""
+        if valor is None:
+            return ""
+        return str(valor)
 
     def _mostrar_detalle_alimento(self, event):
         sel = self.tree_buscar.selection()
@@ -596,11 +610,84 @@ class NutricionApp(tk.Tk):
             return
         alim = detalle[0]
         texto = f"Nombre: {alim['nombre']}\nTipo: {alim['tipo'] or 'N/A'}\n\n"
-        texto += f"Proteína: {alim['proteina'] or 0} g\n"
-        texto += f"Grasa: {alim['grasa'] or 0} g\n"
-        texto += f"Carbohidratos: {alim['carbos'] or 0} g\n"
-        texto += f"Calorías: {alim['kcal'] or 0} kcal"
+        texto += f"Proteína: {alim['proteina'] if alim['proteina'] is not None else 0} g\n"
+        texto += f"Grasa: {alim['grasa'] if alim['grasa'] is not None else 0} g\n"
+        texto += f"Carbohidratos: {alim['carbos'] if alim['carbos'] is not None else 0} g\n"
+        texto += f"Calorías: {alim['kcal'] if alim['kcal'] is not None else 0} kcal"
         messagebox.showinfo(f"Detalle: {nombre}", texto)
+
+    # ── TAB: Historial Semanal ─────────────────────────────
+
+    def _tab_historial(self, parent):
+        frame_fecha = ttk.Frame(parent)
+        frame_fecha.pack(fill="x", pady=5)
+        ttk.Label(frame_fecha, text="Semana inicio (YYYY-MM-DD):").pack(side="left")
+        self.entry_historial_fecha = ttk.Entry(frame_fecha, width=15)
+        self.entry_historial_fecha.pack(side="left", padx=5)
+        self.entry_historial_fecha.insert(0, str(obtener_lunes(datetime.today().date())))
+        ttk.Button(frame_fecha, text="Ver", command=self._cargar_historial).pack(side="left", padx=5)
+        ttk.Button(frame_fecha, text="Hoy", command=self._ir_hoy).pack(side="left")
+
+        cols = ("Fecha", "Desayuno", "Almuerzo", "Cena", "Extras", "Total kcal")
+        self.tree_historial = ttk.Treeview(parent, columns=cols, show="headings", height=18)
+        for col in cols:
+            self.tree_historial.heading(col, text=col)
+        self.tree_historial.column("Fecha", width=90)
+        self.tree_historial.column("Desayuno", width=140)
+        self.tree_historial.column("Almuerzo", width=140)
+        self.tree_historial.column("Cena", width=140)
+        self.tree_historial.column("Extras", width=140)
+        self.tree_historial.column("Total kcal", width=80)
+        self.tree_historial.pack(fill="both", expand=True, pady=5)
+
+        self._cargar_historial()
+
+    def _ir_hoy(self):
+        self.entry_historial_fecha.delete(0, "end")
+        self.entry_historial_fecha.insert(0, str(obtener_lunes(datetime.today().date())))
+        self._cargar_historial()
+
+    def _cargar_historial(self):
+        for item in self.tree_historial.get_children():
+            self.tree_historial.delete(item)
+        
+        fecha_str = self.entry_historial_fecha.get().strip()
+        if not fecha_str:
+            messagebox.showwarning("Campo requerido", "Ingrese una fecha de inicio.")
+            return
+        try:
+            fecha_inicio = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        except ValueError:
+            messagebox.showerror("Fecha inválida", "Use el formato YYYY-MM-DD.")
+            return
+
+        fecha_fin = fecha_inicio + timedelta(days=6)
+
+        try:
+            comidas = obtener_comidas_semana(fecha_inicio, fecha_fin)
+            datos = obtener_datos_semana(fecha_inicio, fecha_fin)
+            datos_dict = {d["fecha"]: d for d in datos}
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar el historial:\n{e}")
+            return
+
+        for comida in comidas:
+            fecha = comida["fecha"]
+            desayuno = ", ".join(comida.get("desayuno", [])) or "-"
+            almuerzo = ", ".join(comida.get("almuerzo", [])) or "-"
+            cena = ", ".join(comida.get("cena", [])) or "-"
+            extras = ", ".join(comida.get("extras", [])) or "-"
+            
+            total_kcal = datos_dict.get(fecha, {}).get("kcal", 0)
+            
+            self.tree_historial.insert("", "end", values=(
+                fecha.strftime("%Y-%m-%d"),
+                desayuno[:25] + ("..." if len(desayuno) > 25 else ""),
+                almuerzo[:25] + ("..." if len(almuerzo) > 25 else ""),
+                cena[:25] + ("..." if len(cena) > 25 else ""),
+                extras[:25] + ("..." if len(extras) > 25 else ""),
+                f"{int(total_kcal)}"
+            ))
 
 
 if __name__ == "__main__":
